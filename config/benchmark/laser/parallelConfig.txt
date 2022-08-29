@@ -1,6 +1,4 @@
 #config
-SerialUpdate:
-0
 MappingRes:
 0.1
 ProbHitThres:
@@ -13,20 +11,14 @@ NodeEdge:
 8
 FrustumAllocationFactor:
 0.4
-LaserAllocationFactor:
-1.0
 FilterType:
 0
-ProcessType:
-1
 UpdateType:
 0
-ExploreType:
-0
-SimType:
+PrecisionType:
 0
 PublishSensor:
-0
+1
 SimGrid:
 %ABSOLUTE PATH TO SIM GRID HERE
 Sensor:
