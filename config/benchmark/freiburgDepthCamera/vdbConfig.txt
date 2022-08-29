@@ -1,0 +1,8 @@
+#config
+MappingRes:
+0.1
+ProbHitThres:
+0.5
+ProbMissThres:
+0.5
+#endconfig

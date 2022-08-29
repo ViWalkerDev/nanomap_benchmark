@@ -1,0 +1,32 @@
+#frustumconfig
+Name:
+openniDepth
+Id:
+1000
+HRes:
+640
+VRes:
+480
+VFOV:
+43
+Rate:
+50
+MaxRange:
+5.0
+MinRange:
+0.2
+ProbHit:
+0.95
+ProbMiss:
+0.35
+FrameTransform:
+1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
+#endconfig
+//Frame Transform in the form of Right Up Forward.
+0.0 -1.0 0.0 0.0 0.0 -1.0 -1.0 0.0 0.0
+0.0 1.0 0.0 0.0 0.0 -1.0 1.0 0.0 0.0
+1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
+0.0 1.0 0.0 0.0 0.0 -1.0 1.0 0.0 0.0
+//RIGHT UP FORWARD
+0.0 -1.0 0.0 0.0 0.0 1.0 1.0 0.0 0.0
+1.0 0.0 0.0 0.0 0.0 1.0 0.0 1.0 0.0
