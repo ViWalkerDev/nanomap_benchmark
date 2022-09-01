@@ -1,24 +1,13 @@
 
-#include <rclcpp/rclcpp.hpp>
-#include <rosbag2_cpp/readers/sequential_reader.hpp>
-#include <rosbag2_cpp/storage_options.hpp>
-#include <rosbag2_cpp/converter_options.hpp>
-#include <rosbag2_cpp/typesupport_helpers.hpp>
-#include <rosbag2_cpp/converter_interfaces/serialization_format_converter.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <geometry_msgs/msg/transform_stamped.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2_msgs/msg/tf_message.hpp>
-#include <tf2/transform_datatypes.h>
-#include <tf2_ros/buffer.h>
+#include <rosbag/bag.h>
+#include <rosbag/view.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/point_cloud2_iterator.h>
+#include <geometry_msgs/PoseStamped.h>
 
 
 #include <octomap/OcTree.h>
-#include <octomap_ros/conversions.hpp>
 
-#include <openvdb/tools/TopologyToLevelSet.h>
 #include <nanomap/manager/Manager.h>
 #include <nanomap/map/OccupancyMap.h>
 #include <nanomap/nanomap.h>
@@ -37,7 +26,6 @@
 #include <string>
 #include <fstream>
 
-using rosbag2_cpp::converter_interfaces::SerializationFormatConverter;
 using ValueT = float;
 using Pose = nanomap::Pose;
 using FloatGrid = openvdb::FloatGrid;
@@ -51,13 +39,7 @@ using Map = nanomap::map::Map;
 using RayT  = openvdb::math::Ray<double>;
 using Vec3T = RayT::Vec3Type;
 using DDAT  = openvdb::math::DDA<RayT, 0>;
-nanomap::Pose tf2pose(geometry_msgs::msg::TransformStamped tf){
-    nanomap::Pose pose;
-    pose.position = Eigen::Vector3f(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z );
-    pose.orientation = Eigen::Quaternionf(tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w );
 
-    return pose;
-}
 
 void loadVDBConfig(std::string vdbConfigStr, std::string sensorConfigStr,
               float& _mappingRes, float& _oddsMiss, float& _oddsHit,
@@ -113,8 +95,8 @@ void loadVDBConfig(std::string vdbConfigStr, std::string sensorConfigStr,
 }
 
 void octomapBuildMapBulkScan(Eigen::Matrix3f frameTransform,
-        std::vector<std::shared_ptr<sensor_msgs::msg::PointCloud2>> &clouds,
-        std::vector<geometry_msgs::msg::PoseStamped> &poses,
+        std::vector<sensor_msgs::PointCloud2Ptr> &clouds,
+        std::vector<geometry_msgs::PoseStamped> &poses,
         float maxRange,
         octomap::OcTree *octree,
         bool discretize) {
@@ -122,6 +104,8 @@ void octomapBuildMapBulkScan(Eigen::Matrix3f frameTransform,
 
         Eigen::Quaternionf frameQuat(frameTransform);
     for (int i = 0; i < clouds.size(); i++) {
+        //geometry_msgs::msg::TransformStamped sensorToWorldTf;
+        //sensorToWorldTf=tfs[i].transforms[0];
         octomap::Pointcloud ompc;
 
         sensor_msgs::PointCloud2ConstIterator<float> iter_x(*(clouds[i]), "x");
@@ -129,11 +113,16 @@ void octomapBuildMapBulkScan(Eigen::Matrix3f frameTransform,
         sensor_msgs::PointCloud2ConstIterator<float> iter_z(*(clouds[i]), "z");
 
         for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z){
+        // Check if the point is invalid
           if (!std::isnan (*iter_x) && !std::isnan (*iter_y) && !std::isnan (*iter_z)){
 
             ompc.push_back(*iter_x, *iter_y, *iter_z);
-          }
+          }//else{
+            //std::cout << "point is Nan" << std::endl;
+          //}
+
         }
+
         octomap::point3d sensorOrigin;
         sensorOrigin.x() = 0.0;
         sensorOrigin.y() = 0.0;
@@ -174,9 +163,7 @@ void populateTempGrid(openvdb::FloatGrid::Ptr grid, openvdb::FloatGrid::Ptr temp
   DDAT dda;
 
   openvdb::Vec3d ray_origin_world(pose.position(0), pose.position(1), pose.position(2));
-
   const Vec3T ray_origin_index(grid->worldToIndex(ray_origin_world));
-
   openvdb::Vec3d ray_direction;
   bool max_range_ray;
   openvdb::Vec3d x;
@@ -261,8 +248,8 @@ void integrateTempGrid(openvdb::FloatGrid::Ptr grid, openvdb::FloatGrid::Ptr tem
 return;
 }
 
-void vdbMappingTest(std::vector<std::shared_ptr<sensor_msgs::msg::PointCloud2>> &clouds,
-        	                   std::vector<geometry_msgs::msg::PoseStamped>                 &poses,
+void vdbMappingTest(std::vector<sensor_msgs::PointCloud2Ptr> &clouds,
+        	                   std::vector<geometry_msgs::PoseStamped>                 &poses,
 	 	                         openvdb::FloatGrid::Ptr                               grid,
 		                         openvdb::FloatGrid::Accessor                       gridAcc,
 		                         float                                             _gridRes,
@@ -293,7 +280,6 @@ void vdbMappingTest(std::vector<std::shared_ptr<sensor_msgs::msg::PointCloud2>> 
    int indexTarget =start;
    int indexEnd = end;
    nanomap::Pose pose;
-   geometry_msgs::msg::TransformStamped sensorToWorldTf;
    Eigen::Quaterniond quat;
    Eigen::Vector3d pos;
    auto handle_start = std::chrono::high_resolution_clock::now();
@@ -314,6 +300,7 @@ void vdbMappingTest(std::vector<std::shared_ptr<sensor_msgs::msg::PointCloud2>> 
        populateTempGrid(grid, tempGrid, tempAcc,
   		                   clouds[index]->width, clouds[index]->height, clouds[index]->point_step,
   		                   &(clouds[index]->data[0]), pose, maxRange, logOddsMiss, logOddsHit, gridRes, frameTransform);
+
        integrateTempGrid(grid, tempGrid, gridAcc, logEmptyClampThres, logOccClampThres, logOddsThresMin, logOddsThresMax);
        IterType iter{grid->tree()};
        iter.setMaxDepth(IterType::LEAF_DEPTH);
@@ -343,7 +330,7 @@ std::string convertNanosecondsSinceEpoc(long unsigned int nanoSinceEpoc)
 
 int main(int argc, char **argv) {
   std::cout << argc << std::endl;
-    if(argc < 12){
+    if(argc < 10){
         std::cout  << "pass bag, sensorTopic, sensorPoseTopic, sensorName, configFile, start, end, loopcount, sensorType, voxelizedOnly, and GPUOnly as arguments" << std::endl;
         exit(1);
     }
@@ -361,68 +348,48 @@ int main(int argc, char **argv) {
     int loopCount = atoi(argv[8]);
     int sensorType = atoi(argv[9]);
     int voxelizedOnly = atoi(argv[10]);
-    std::cout << "1" << std::endl;
     int GPUOnly = atoi(argv[11]);
-    std::cout << "2 " << std::endl;
-    rosbag2_cpp::readers::SequentialReader reader;
-    rosbag2_storage::StorageOptions storageOptions{};
-    storageOptions.uri=bagPath;
-    storageOptions.storage_id="sqlite3";
+    rosbag::Bag bagIn;
+    bagIn.open(bagPath, rosbag::BagMode::Read);
 
-    rosbag2_cpp::ConverterOptions convertOptions{};
-    convertOptions.input_serialization_format = "cdr";
-    convertOptions.output_serialization_format = "cdr";
-    reader.open(storageOptions, convertOptions);
-    std::vector<rosbag2_storage::TopicMetadata> topic = reader.get_all_topics_and_types();
-    std::map<std::string, std::string> nameTypeMap;
-    for(auto t:topic)
-    {
-      std::cout << "meta name: " << t.name << std::endl;
-      std::cout << "meta type: " << t.type << std::endl;
-      std::cout << "meta serialization_format: " << t.serialization_format << std::endl;
-      nameTypeMap[t.name]=t.type;
+    rosbag::View view(bagIn);
+
+    std::vector<sensor_msgs::PointCloud2Ptr> cloudPtrs;
+    std::vector<geometry_msgs::PoseStamped> poses;
+    std::vector<geometry_msgs::PoseStamped> matchedPoses;
+
+    int count = 0;
+    for (auto it = view.begin(); it != view.end(); it++) {
+        const auto &topic = it->getTopic();
+        if (topic == sensorPoseTopic) {
+            auto pose = it->instantiate<geometry_msgs::PoseStamped>();
+            if (!pose) {
+                continue;
+            }
+            if(count>= indexTarget){
+              poses.push_back(*pose);
+            }
+        }else if (topic == sensorTopic) {
+           auto cloudPtr = (it->instantiate<sensor_msgs::PointCloud2>());
+            if (!cloudPtr) {
+                continue;
+            }
+            if(count>=indexTarget){
+              if(!poses.empty()){
+                cloudPtrs.push_back(cloudPtr);
+                matchedPoses.push_back(poses.back());
+              }
+            }
+            count++;
+        }
+        if(count>(indexEnd)){
+          break;
+        }
     }
-    auto library_cloud = rosbag2_cpp::get_typesupport_library("sensor_msgs/msg/PointCloud2", "rosidl_typesupport_cpp");
-    auto type_support_cloud = rosbag2_cpp::get_typesupport_handle("sensor_msgs/msg/PointCloud2", "rosidl_typesupport_cpp", library_cloud);
-    auto library_pose = rosbag2_cpp::get_typesupport_library("geometry_msgs/msg/PoseStamped", "rosidl_typesupport_cpp");
-    auto type_support_pose = rosbag2_cpp::get_typesupport_handle("geometry_msgs/msg/PoseStamped", "rosidl_typesupport_cpp", library_pose);
-    std::vector<std::shared_ptr<sensor_msgs::msg::PointCloud2>> cloudPtrs;
-    std::vector<geometry_msgs::msg::PoseStamped> poses;
-    std::vector<geometry_msgs::msg::PoseStamped> matchedPoses;
-    auto ros_message = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
-    rosbag2_cpp::SerializationFormatConverterFactory factory;
-    std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer;
-    cdr_deserializer = factory.load_deserializer("cdr");
-    std::shared_ptr<rosbag2_storage::SerializedBagMessage> serialized_message;
-    ros_message->allocator = rcutils_get_default_allocator();
-    int count  = 0;
-    while(reader.has_next())
-    {
-      serialized_message = reader.read_next();
-      ros_message->time_stamp = 0;
-      ros_message->message = nullptr;
-      if(strcmp(serialized_message->topic_name.c_str(),sensorPoseTopic.c_str())==0){
-        if(count>= indexTarget){
-          geometry_msgs::msg::PoseStamped pose;
-          ros_message->message = &(pose);
-          cdr_deserializer->deserialize(serialized_message,type_support_pose, ros_message);
-          poses.push_back(pose);
-        }
-      }else if(strcmp(serialized_message->topic_name.c_str(),sensorTopic.c_str())==0){
-        if(count >= indexTarget){
-        std::shared_ptr<sensor_msgs::msg::PointCloud2> cloudPtr = std::make_shared<sensor_msgs::msg::PointCloud2>();
-        ros_message->message = &(*cloudPtr);
-        cdr_deserializer->deserialize(serialized_message,type_support_cloud, ros_message);
-          if(!poses.empty()){
-            cloudPtrs.push_back(cloudPtr);
-            matchedPoses.push_back(poses.back());
-          }
-        }
-        count += 1;
-      }
-      if(count>(indexEnd)){
-        break;
-      }
+
+    if (cloudPtrs.size() == 0) {
+        std::cout << "no clouds found - check the topic name.\n" << std::endl;
+        exit(1);
     }
     std::cout  << "cloudPtrs Size: " << cloudPtrs.size() << std::endl;
     indexEnd = cloudPtrs.size();
@@ -440,13 +407,11 @@ int main(int argc, char **argv) {
     auto handle_end = std::chrono::high_resolution_clock::now();
     double handle_time=0;
     nanomap::Pose pose;
-    // /*****************************************************************************/
+   // /*****************************************************************************/
         //voxelized, parallel update test;
         //Initialised required object
-        std::shared_ptr<nanomap::config::Config> voxelizedConfig = std::make_shared<nanomap::config::Config>(nanomap::config::Config(voxelizedConfigStr));
-        Eigen::Matrix<float, 3, 3> frameTransform = voxelizedConfig->sensorData(0)->sharedParameters()._frameTransform;
-
         if(sensorType == 0){
+        std::shared_ptr<nanomap::config::Config> voxelizedConfig = std::make_shared<nanomap::config::Config>(nanomap::config::Config(voxelizedConfigStr));
         std::shared_ptr<Map> voxelized_map_ptr = std::make_shared<Map>(Map(voxelizedConfig->mappingRes(), voxelizedConfig->probHitThres(), voxelizedConfig->probMissThres()));
         nanomap::manager::Manager voxelizedManager(voxelizedConfig);
         //Start timing and loop cloud insertion
@@ -496,12 +461,14 @@ int main(int argc, char **argv) {
         openvdb::io::File(vox_str).write({voxelized_map_ptr->occupiedGrid()});
         //Close Handler
         voxelizedManager.closeHandler();
-
+      }
 /*****************************************************************************/
     //Non voxelized, parallel update test;
     //Initialise required objects
     if(voxelizedOnly != 1){
     std::shared_ptr<nanomap::config::Config> parallelConfig = std::make_shared<nanomap::config::Config>(nanomap::config::Config(parallelConfigStr));
+    Eigen::Matrix<float, 3, 3> frameTransform = parallelConfig->sensorData(0)->sharedParameters()._frameTransform;
+    if(sensorType==0){
 
       std::shared_ptr<Map> parallel_map_ptr = std::make_shared<Map>(Map(parallelConfig->mappingRes(), parallelConfig->probHitThres(), parallelConfig->probMissThres()));
       nanomap::manager::Manager parallelManager(parallelConfig);
@@ -556,7 +523,6 @@ int main(int argc, char **argv) {
       //Close Handler
       parallelManager.closeHandler();
     }
-  }
     if(GPUOnly == 0){
 /********************************hostLaserVoxelCount()**********************************************/
     //cpu raycast, serial voxel update.
@@ -649,4 +615,5 @@ int main(int argc, char **argv) {
     octreeDiscretized->writeBinary(octo_disc_str);
   }
   }
+}
 }

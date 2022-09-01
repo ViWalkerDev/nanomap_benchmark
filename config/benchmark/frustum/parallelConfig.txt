@@ -18,7 +18,7 @@ UpdateType:
 PrecisionType:
 0
 PublishSensor:
-1
+0
 SimGrid:
 %ABSOLUTE PATH TO SIM GRID HERE
 Sensor:

@@ -14,7 +14,7 @@ VFOV:
 Rate:
 20
 MaxRange:
-5
+10
 MinRange:
 1
 ProbHit:

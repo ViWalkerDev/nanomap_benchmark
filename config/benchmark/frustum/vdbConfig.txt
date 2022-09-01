@@ -1,6 +1,6 @@
 #config
 MappingRes:
-0.025
+0.1
 ProbHitThres:
 0.51
 ProbMissThres:
